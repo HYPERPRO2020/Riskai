@@ -329,8 +329,9 @@ class RiskEnv:
         if attacker_dice == 0 and defender_dice == 0: # No dice to roll, battle can't happen
              return {'attackers_lost': 0, 'defenders_lost': 0, 'conquered': False}
 
-        attacker_rolls = sorted(random.sample(range(1, 7), attacker_dice), reverse=True)
-        defender_rolls = sorted(random.sample(range(1, 7), defender_dice), reverse=True)
+        # Dice are independent rolls WITH replacement (not sample, which draws without).
+        attacker_rolls = sorted((random.randint(1, 6) for _ in range(attacker_dice)), reverse=True)
+        defender_rolls = sorted((random.randint(1, 6) for _ in range(defender_dice)), reverse=True)
 
         casualties = {'attackers_lost': 0, 'defenders_lost': 0}
         
