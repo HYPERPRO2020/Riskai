@@ -360,14 +360,14 @@ class PPOAgent:
             # Critic loss (Huber Loss / Smooth L1 Loss)
             critic_loss = nn.functional.smooth_l1_loss(new_values, values)
 
-            # Total loss: sum of actor loss, scaled critic loss, and entropy regularization
-            # Entropy regularization encourages exploration
+            # Total loss: actor loss + value loss - entropy bonus (encourages exploration)
+            total_loss = actor_loss + 0.5 * critic_loss - 0.01 * entropy_loss
+
             self.optimizer.zero_grad()
-            loss.backward()
-            # Gradient clipping to prevent exploding gradients
-            nn.utils.clip_grad_norm_(self.actor_critic.parameters(), 0.5) 
+            total_loss.backward()
+            nn.utils.clip_grad_norm_(self.actor_critic.parameters(), 0.5)
             self.optimizer.step()
-            self.scheduler.step() # Update learning rate
+            self.scheduler.step()
 
         self.buffer = [] # Clear buffer after learning
 

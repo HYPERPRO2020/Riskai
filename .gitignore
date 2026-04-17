@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.pyo
+
+checkpoints/
+*.pt
+*.pth
+
+training_log.csv
