@@ -13,34 +13,20 @@ class ActorCritic(nn.Module):
         self.num_territories = num_territories
 
         # Shared layers for both Actor and Critic
-        self.fc1 = nn.Linear(state_size, 256)
-        self.relu = nn.ReLU() # Using ReLU for hidden layers
-        self.fc2 = nn.Linear(256, 128)
+        self.fc1 = nn.Linear(state_size, 512)
+        self.relu = nn.ReLU()
+        self.fc2 = nn.Linear(512, 256)
 
         # --- Actor Heads ---
-        # Reinforcement Phase Actions:
-        # 1. Choose a territory to reinforce (42 options)
-        self.actor_reinforce_territory = nn.Linear(128, num_territories)
-        # 2. Choose number of armies to place (indices 0-4 for 1-5 armies)
-        self.actor_reinforce_armies = nn.Linear(128, 5)
-
-        # Attack Phase Actions:
-        # Attack from (42) x Attack to (42) x Number of dice (3)
-        # This is a flattened output, we'll reshape it for sampling
-        self.actor_attack = nn.Linear(128, num_territories * num_territories * 3)
-
-        # Fortify Phase Actions:
-        # Fortify from (42) x Fortify to (42) x Number of armies (indices 0-9 for 1-10 armies)
-        self.actor_fortify = nn.Linear(128, num_territories * num_territories * 10)
-
-        # General Actions (can be chosen in specific phases):
-        # 1. Trade Cards: 0 (No Trade), 1 (Trade)
-        self.actor_trade_cards = nn.Linear(128, 2)
-        # 2. Phase Transition: 0 (End Reinforcement), 1 (End Attack), 2 (End Fortify)
-        self.actor_phase_transition = nn.Linear(128, 3)
+        self.actor_reinforce_territory = nn.Linear(256, num_territories)
+        self.actor_reinforce_armies = nn.Linear(256, 5)
+        self.actor_attack = nn.Linear(256, num_territories * num_territories * 3)
+        self.actor_fortify = nn.Linear(256, num_territories * num_territories * 10)
+        self.actor_trade_cards = nn.Linear(256, 2)
+        self.actor_phase_transition = nn.Linear(256, 3)
 
         # --- Critic Head ---
-        self.critic = nn.Linear(128, 1)
+        self.critic = nn.Linear(256, 1)
 
     def forward(self, state):
         """
@@ -260,12 +246,14 @@ class PPOAgent:
             next_values = next_values.squeeze()
 
         for t in reversed(range(len(rewards))):
-            # If done, next_value is 0 as there's no future state
-            next_value = next_values[t] * (1 - dones[t]) 
+            next_value = next_values[t] * (1 - dones[t])
             delta = rewards[t] + self.gamma * next_value - values[t]
             advantages[t] = last_gae_lambda = delta + self.gamma * self.gae_lambda * (1 - dones[t]) * last_gae_lambda
 
-        # Normalize advantages (optional but common practice)
+        # Compute returns before normalizing advantages (critic target = advantage + old value)
+        returns = (advantages + values).detach()
+
+        # Normalize advantages
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
         # Perform PPO updates (multiple epochs over the collected data)
@@ -357,8 +345,8 @@ class PPOAgent:
             actor_loss /= len(states)
             entropy_loss /= len(states)
 
-            # Critic loss (Huber Loss / Smooth L1 Loss)
-            critic_loss = nn.functional.smooth_l1_loss(new_values, values)
+            # Critic loss: train toward actual estimated returns, not old buffer values
+            critic_loss = nn.functional.smooth_l1_loss(new_values, returns)
 
             # Total loss: actor loss + value loss - entropy bonus (encourages exploration)
             total_loss = actor_loss + 0.5 * critic_loss - 0.01 * entropy_loss
@@ -367,9 +355,9 @@ class PPOAgent:
             total_loss.backward()
             nn.utils.clip_grad_norm_(self.actor_critic.parameters(), 0.5)
             self.optimizer.step()
-            self.scheduler.step()
 
-        self.buffer = [] # Clear buffer after learning
+        self.scheduler.step()  # Once per learn() call, not per PPO epoch
+        self.buffer = []
 
     def pretrain_step(self, state, target_action_dict, env_phase):
         """
